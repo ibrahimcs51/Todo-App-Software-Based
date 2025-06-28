@@ -1,32 +1,37 @@
-
-import React, { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { useTasks } from '@/contexts/TaskContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
-import { LogOut, Plus, Moon, Sun, Search, Calendar, Star, Clock, CheckCircle, Circle, Edit, Trash, Filter, Tag, TrendingUp, Target, Zap, Award } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTasks } from '@/contexts/TaskContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { Award, Calendar, CheckCircle, Clock, Edit, File, FileText, Filter, Image, LogOut, Moon, Plus, Search, Sun, Tag, Target, Trash, TrendingUp, Upload, X, Zap } from 'lucide-react';
+import React, { useState, useCallback, useMemo } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { v4 as uuidv4 } from 'uuid';
+
+interface FileWithPreview extends File {
+  id: string;
+  preview?: string;
+}
 
 const TaskDashboard = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { 
-    filteredTasks, 
-    loading, 
-    createTask, 
-    updateTask, 
-    deleteTask, 
-    toggleTask, 
-    filter, 
+  const {
+    filteredTasks,
+    loading,
+    createTask,
+    updateTask,
+    deleteTask,
+    toggleTask,
+    filter,
     setFilter,
-    getAllTags 
+    getAllTags
   } = useTasks();
 
   const [newTask, setNewTask] = useState('');
@@ -35,6 +40,7 @@ const TaskDashboard = () => {
   const [newTaskCategory, setNewTaskCategory] = useState('work');
   const [newTaskTags, setNewTaskTags] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [newTaskFiles, setNewTaskFiles] = useState<FileWithPreview[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
@@ -42,6 +48,51 @@ const TaskDashboard = () => {
   const [showConfetti, setShowConfetti] = useState(false);
 
   const categories = ['work', 'personal', 'health', 'learning', 'shopping', 'finance', 'travel'];
+
+  // File upload handling
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const filesWithPreview = acceptedFiles.map(file => {
+      const fileWithPreview = Object.assign(file, {
+        id: uuidv4(),
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      });
+      return fileWithPreview;
+    });
+    setNewTaskFiles(prev => [...prev, ...filesWithPreview]);
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif'],
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    },
+    maxSize: 5 * 1024 * 1024, // 5MB
+  });
+
+  const removeFile = (id: string) => {
+    setNewTaskFiles(prev => {
+      const file = prev.find(f => f.id === id);
+      if (file?.preview) {
+        URL.revokeObjectURL(file.preview);
+      }
+      return prev.filter(f => f.id !== id);
+    });
+  };
+
+  // Clean up object URLs when component unmounts
+  React.useEffect(() => {
+    return () => {
+      newTaskFiles.forEach(file => {
+        if (file.preview) {
+          URL.revokeObjectURL(file.preview);
+        }
+      });
+    };
+  }, [newTaskFiles]);
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +104,8 @@ const TaskDashboard = () => {
         priority: newTaskPriority,
         category: newTaskCategory,
         tags: tags,
-        dueDate: newTaskDueDate ? new Date(newTaskDueDate) : undefined
+        dueDate: newTaskDueDate ? new Date(newTaskDueDate) : undefined,
+        attachments: newTaskFiles
       });
       setNewTask('');
       setNewTaskDescription('');
@@ -61,18 +113,22 @@ const TaskDashboard = () => {
       setNewTaskCategory('work');
       setNewTaskTags('');
       setNewTaskDueDate('');
+      setNewTaskFiles([]);
       setIsAddingTask(false);
     }
   };
 
-  const handleEditTask = (task: any) => {
-    setEditingTask({
-      ...task,
-      dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
-      tags: task.tags.join(', ')
-    });
-    setIsEditDialogOpen(true);
-  };
+ const handleEditTask = (task: any) => {
+  console.log(task);
+  setEditingTask({
+    ...task,
+    dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
+    tags: Array.isArray(task.tags) ? task.tags.join(', ') : '',
+    attachments: task.attachments || []
+  });
+  setIsEditDialogOpen(true);
+};
+
 
   const handleUpdateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +140,8 @@ const TaskDashboard = () => {
         priority: editingTask.priority,
         category: editingTask.category,
         tags: tags,
-        dueDate: editingTask.dueDate ? new Date(editingTask.dueDate) : undefined
+        dueDate: editingTask.dueDate ? new Date(editingTask.dueDate) : undefined,
+        attachments: editingTask.attachments
       });
       setIsEditDialogOpen(false);
       setEditingTask(null);
@@ -92,6 +149,7 @@ const TaskDashboard = () => {
   };
 
   const handleToggleTask = async (id: string) => {
+     console.log("🔁 handleToggleTask called with id:", id);
     const task = filteredTasks.find(t => t.id === id);
     if (task && !task.completed) {
       setShowConfetti(true);
@@ -101,16 +159,18 @@ const TaskDashboard = () => {
   };
 
   const handleDeleteTask = async (id: string) => {
+    console.log("🗑️ handleDeleteTask called with id:", id);
     await deleteTask(id);
   };
 
   // Filter tasks based on search term and other filters
-  const displayTasks = filteredTasks.filter(task => {
+  const displayTasks = (filteredTasks ?? []).filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       task.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
     return matchesSearch;
   });
+
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -138,7 +198,7 @@ const TaskDashboard = () => {
   const totalTasks = filteredTasks.length;
   const completedTasks = filteredTasks.filter(task => task.completed).length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const overdueTasks = filteredTasks.filter(task => 
+  const overdueTasks = filteredTasks.filter(task =>
     task.dueDate && new Date(task.dueDate) < new Date() && !task.completed
   ).length;
   const todayTasks = filteredTasks.filter(task =>
@@ -148,8 +208,8 @@ const TaskDashboard = () => {
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleDateString('en-US', { 
-      month: 'short', 
+    return dateObj.toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
       year: dateObj.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
     });
@@ -162,6 +222,16 @@ const TaskDashboard = () => {
       completed: filteredTasks.filter(task => task.category === category && task.completed).length
     })).filter(stat => stat.total > 0);
     return categoryStats;
+  };
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType.startsWith('image/')) {
+      return <Image className="h-5 w-5" />;
+    } else if (fileType === 'application/pdf') {
+      return <FileText className="h-5 w-5" />;
+    } else {
+      return <File className="h-5 w-5" />;
+    }
   };
 
   return (
@@ -208,7 +278,7 @@ const TaskDashboard = () => {
                 Welcome, {user?.name}
               </Badge>
             </div>
-            
+
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
@@ -218,7 +288,7 @@ const TaskDashboard = () => {
               >
                 {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </Button>
-              
+
               <Button
                 variant="outline"
                 onClick={logout}
@@ -247,7 +317,7 @@ const TaskDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 transform hover:scale-105 transition-all duration-300 hover:shadow-xl">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -259,7 +329,7 @@ const TaskDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 transform hover:scale-105 transition-all duration-300 hover:shadow-xl">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -271,7 +341,7 @@ const TaskDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card className="bg-gradient-to-r from-red-500 to-red-600 text-white border-0 transform hover:scale-105 transition-all duration-300 hover:shadow-xl">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -325,21 +395,21 @@ const TaskDashboard = () => {
                   <span className="font-semibold">{completionRate}%</span>
                 </div>
                 <Progress value={completionRate} className="h-3 bg-gray-200">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-1000 ease-out"
                     style={{ width: `${completionRate}%` }}
                   />
                 </Progress>
               </div>
-              
+
               {getTasksByCategory().map((category, index) => (
                 <div key={category.name} className="animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="capitalize">{category.name}</span>
                     <span>{category.completed}/{category.total}</span>
                   </div>
-                  <Progress 
-                    value={(category.completed / category.total) * 100} 
+                  <Progress
+                    value={(category.completed / category.total) * 100}
                     className="h-2"
                   />
                 </div>
@@ -357,7 +427,7 @@ const TaskDashboard = () => {
                 <span>Create New Task</span>
               </div>
               {!isAddingTask && (
-                <Button 
+                <Button
                   onClick={() => setIsAddingTask(true)}
                   className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-300"
                 >
@@ -394,7 +464,7 @@ const TaskDashboard = () => {
                       <SelectItem value="high">🔴 High Priority</SelectItem>
                     </SelectContent>
                   </Select>
-                  
+
                   <Select value={newTaskCategory} onValueChange={setNewTaskCategory}>
                     <SelectTrigger className="bg-white/70 border-white/30 focus:bg-white">
                       <SelectValue />
@@ -422,18 +492,82 @@ const TaskDashboard = () => {
                     className="bg-white/70 border-white/30 focus:bg-white"
                   />
                 </div>
+
+                {/* File Dropzone */}
+                <div
+                  {...getRootProps()}
+                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-300 ${isDragActive
+                      ? 'border-blue-500 bg-blue-50/50'
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30'
+                    }`}
+                >
+                  <input {...getInputProps()} />
+                  <div className="flex flex-col items-center justify-center space-y-2">
+                    <Upload className="h-8 w-8 text-gray-400" />
+                    <p className="text-sm text-gray-600">
+                      {isDragActive ?
+                        'Drop the files here...' :
+                        'Drag & drop files here, or click to select files'}
+                    </p>
+                    <p className="text-xs text-gray-500">Supports images, PDFs, and text files (max 5MB)</p>
+                  </div>
+                </div>
+
+                {/* Preview selected files */}
+                {newTaskFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-gray-700">Attachments:</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {newTaskFiles.map(file => (
+                        <div key={file.id} className="relative group border rounded-md p-2 flex items-center space-x-2 bg-white/80">
+                          {file.preview ? (
+                            <div className="relative h-12 w-12 flex-shrink-0">
+                              <img
+                                src={file.preview}
+                                alt={file.name}
+                                className="h-full w-full object-cover rounded"
+                              />
+                            </div>
+                          ) : (
+                            <div className="h-12 w-12 flex items-center justify-center bg-gray-100 rounded">
+                              {getFileIcon(file.type)}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                            <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFile(file.id);
+                            }}
+                            className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                          >
+                            <X className="h-3 w-3 text-white" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex space-x-2">
-                  <Button 
-                    type="submit" 
+                  <Button
+                    type="submit"
                     className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-300"
                     disabled={loading}
                   >
                     {loading ? 'Creating...' : '✨ Create Task'}
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setIsAddingTask(false)}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsAddingTask(false);
+                      setNewTaskFiles([]);
+                    }}
                     className="bg-white/70 border-white/30 hover:bg-white transform hover:scale-105 transition-all duration-300"
                   >
                     Cancel
@@ -455,7 +589,7 @@ const TaskDashboard = () => {
               className="pl-10 bg-white/70 backdrop-blur-sm border-white/20 focus:bg-white/90 transition-all duration-300"
             />
           </div>
-          
+
           <div className="flex flex-col sm:flex-row gap-2">
             <Select value={filter.status} onValueChange={(value: any) => setFilter({ status: value })}>
               <SelectTrigger className="w-full sm:w-40 bg-white/70 backdrop-blur-sm border-white/20">
@@ -519,98 +653,131 @@ const TaskDashboard = () => {
               <div className="space-y-4">
                 {displayTasks.map((task, index) => (
                   <div
-                    key={task.id}
-                    className={`group relative p-6 rounded-2xl border transition-all duration-500 hover:shadow-xl hover:-translate-y-2 animate-fade-in ${
-                      task.completed 
-                        ? 'bg-gray-50/90 dark:bg-gray-800/60 opacity-75 border-gray-200/50 transform scale-95' 
+                    key={task._id}
+                    className={`group relative p-6 rounded-2xl border transition-all duration-500 hover:shadow-xl hover:-translate-y-2 animate-fade-in ${task.completed
+                        ? 'bg-gray-50/90 dark:bg-gray-800/60 opacity-75 border-gray-200/50 transform scale-95'
                         : 'bg-white/90 dark:bg-gray-700/90 border-white/40 hover:bg-white/95 shadow-lg'
-                    }`}
+                      }`}
                     style={{
                       animationDelay: `${index * 100}ms`
                     }}
                   >
                     <div className="flex items-start space-x-4">
                       <button
-                        onClick={() => handleToggleTask(task.id)}
-                        className={`mt-1 flex-shrink-0 w-6 h-6 rounded-full border-2 transition-all duration-300 transform hover:scale-110 ${
-                          task.completed
+                        onClick={() => handleToggleTask(task._id)}
+                        className={`mt-1 flex-shrink-0 w-6 h-6 rounded-full border-2 transition-all duration-300 transform hover:scale-110 ${task.completed
                             ? 'bg-gradient-to-r from-green-500 to-green-600 border-green-500 text-white shadow-lg'
                             : 'border-gray-300 hover:border-green-400 hover:shadow-md'
-                        }`}
+                          }`}
                       >
                         {task.completed && <CheckCircle className="w-4 h-4 m-0.5" />}
                       </button>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-3">
-                          <h3 className={`font-semibold text-xl transition-all duration-300 ${
-                            task.completed ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'
-                          }`}>
+                          <h3 className={`font-semibold text-xl transition-all duration-300 ${task.completed ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'
+                            }`}>
                             {task.title}
                           </h3>
-                          
+
                           <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="text-gray-400 hover:text-blue-600 transform hover:scale-110 transition-all duration-200"
                               onClick={() => handleEditTask(task)}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => handleDeleteTask(task.id)}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteTask(task._id)}
                               className="text-gray-400 hover:text-red-600 transform hover:scale-110 transition-all duration-200"
                             >
                               <Trash className="h-4 w-4" />
                             </Button>
                           </div>
                         </div>
-                        
+
                         {task.description && (
-                          <p className={`text-sm mb-4 leading-relaxed ${
-                            task.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-300'
-                          }`}>
+                          <p className={`text-sm mb-4 leading-relaxed ${task.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-300'
+                            }`}>
                             {task.description}
                           </p>
                         )}
-                        
+
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge className={`text-xs font-medium border shadow-sm ${getPriorityColor(task.priority)}`}>
                             {task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢'} {task.priority}
                           </Badge>
-                          
+
                           {task.category && (
                             <Badge className={`text-xs font-medium border shadow-sm ${getCategoryColor(task.category)}`}>
                               📁 {task.category}
                             </Badge>
                           )}
-                          
+
                           {task.dueDate && (
-                            <Badge 
-                              variant="outline" 
-                              className={`text-xs shadow-sm ${
-                                new Date(task.dueDate) < new Date() && !task.completed
+                            <Badge
+                              variant="outline"
+                              className={`text-xs shadow-sm ${new Date(task.dueDate) < new Date() && !task.completed
                                   ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
                                   : new Date(task.dueDate).toDateString() === new Date().toDateString()
-                                  ? 'bg-orange-50 text-orange-700 border-orange-200'
-                                  : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}
+                                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}
                             >
                               <Calendar className="w-3 h-3 mr-1" />
                               {formatDate(task.dueDate)}
                             </Badge>
                           )}
-                          
-                          {task.tags.map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-xs bg-gradient-to-r from-gray-50 to-gray-100 text-gray-600 border-gray-200 shadow-sm">
+
+                          {(task.tags ?? []).map((tag) => (
+                            <Badge
+                              key={tag}
+                              variant="outline"
+                              className="text-xs bg-gradient-to-r from-gray-50 to-gray-100 text-gray-600 border-gray-200 shadow-sm"
+                            >
                               <Tag className="w-3 h-3 mr-1" />
                               {tag}
                             </Badge>
                           ))}
+
                         </div>
+
+                        {/* Display attachments if they exist */}
+                        {/* {task.attachments && task.attachments.length > 0 && (
+                          <div className="mt-4">
+                            <h4 className="text-xs font-medium text-gray-500 mb-2">ATTACHMENTS</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {task.attachments.map((file: FileWithPreview) => (
+                                <a 
+                                  key={file.id} 
+                                  href={file.preview || '#'} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors duration-200"
+                                >
+                                  {file.preview ? (
+                                    <img 
+                                      src={file.preview} 
+                                      alt={file.name} 
+                                      className="h-6 w-6 object-cover rounded"
+                                    />
+                                  ) : (
+                                    <div className="h-6 w-6 flex items-center justify-center bg-gray-200 rounded">
+                                      {getFileIcon(file.type)}
+                                    </div>
+                                  )}
+                                  <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">
+                                    {file.name}
+                                  </span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )} */}
                       </div>
                     </div>
                   </div>
@@ -646,9 +813,9 @@ const TaskDashboard = () => {
                 className="bg-white/70 border-white/30 focus:bg-white"
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select 
-                  value={editingTask.priority} 
-                  onValueChange={(value: 'low' | 'medium' | 'high') => 
+                <Select
+                  value={editingTask.priority}
+                  onValueChange={(value: 'low' | 'medium' | 'high') =>
                     setEditingTask({ ...editingTask, priority: value })
                   }
                 >
@@ -661,9 +828,9 @@ const TaskDashboard = () => {
                     <SelectItem value="high">🔴 High Priority</SelectItem>
                   </SelectContent>
                 </Select>
-                
-                <Select 
-                  value={editingTask.category || 'work'} 
+
+                <Select
+                  value={editingTask.category || 'work'}
                   onValueChange={(value) => setEditingTask({ ...editingTask, category: value })}
                 >
                   <SelectTrigger className="bg-white/70 border-white/30">
@@ -678,32 +845,74 @@ const TaskDashboard = () => {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <Input
                 type="date"
                 value={editingTask.dueDate}
                 onChange={(e) => setEditingTask({ ...editingTask, dueDate: e.target.value })}
                 className="bg-white/70 border-white/30 focus:bg-white"
               />
-              
+
               <Input
                 placeholder="Tags (comma separated)"
                 value={editingTask.tags}
                 onChange={(e) => setEditingTask({ ...editingTask, tags: e.target.value })}
                 className="bg-white/70 border-white/30 focus:bg-white"
               />
-              
+
+              {/* Display existing attachments */}
+              {editingTask.attachments && editingTask.attachments.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 mb-2">CURRENT ATTACHMENTS</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {editingTask.attachments.map((file: FileWithPreview) => (
+                      <div
+                        key={file.id}
+                        className="relative group flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md"
+                      >
+                        {file.preview ? (
+                          <img
+                            src={file.preview}
+                            alt={file.name}
+                            className="h-6 w-6 object-cover rounded"
+                          />
+                        ) : (
+                          <div className="h-6 w-6 flex items-center justify-center bg-gray-200 rounded">
+                            {getFileIcon(file.type)}
+                          </div>
+                        )}
+                        <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">
+                          {file.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTask({
+                              ...editingTask,
+                              attachments: editingTask.attachments.filter((f: FileWithPreview) => f.id !== file.id)
+                            });
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        >
+                          <X className="h-2.5 w-2.5 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-2 pt-4">
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => setIsEditDialogOpen(false)}
                   className="transform hover:scale-105 transition-all duration-200"
                 >
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={loading}
                   className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-200"
                 >

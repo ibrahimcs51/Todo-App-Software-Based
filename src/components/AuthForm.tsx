@@ -8,17 +8,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Moon, Sun } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const AuthForm = () => {
+  const navigate = useNavigate();
   const { login, register, loading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [registerData, setRegisterData] = useState({ email: '', password: '', name: '' });
 
-  const handleLogin = async (e: React.FormEvent) => {
+const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loginData.email && loginData.password) {
-      await login(loginData);
+      const result = await login(loginData);
+      if (result?.success) {
+        navigate('/'); // ✅ redirect to dashboard (protected home)
+      }
     }
   };
 
